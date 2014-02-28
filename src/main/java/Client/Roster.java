@@ -105,8 +105,11 @@ import xmpp.extensions.IqVCard;
 //#endif
 import xmpp.JabberDispatcher;
 import xmpp.JidUtils;
+import xmpp.MessageDispatcher;
 import xmpp.PresenceDispatcher;
 import xmpp.RosterDispatcher;
+import xmpp.extensions.StreamManagement;
+import xmpp.login.SASLAuth;
 
 //#if android
 import org.bombusmod.BombusModActivity;
@@ -262,7 +265,9 @@ public class Roster
             setProgress(25);
             resetRoster();
         } else {
-            makeRosterOffline();
+            if (!sd.getTheStream().isResumptionAllowed()) {
+                makeRosterOffline();
+            }
         }
         try {
             Account a = sd.account;
@@ -1224,7 +1229,9 @@ public class Roster
     }
 
     public void loginSuccess() {
+        sd.getTheStream().cancelBlockListenerByClass(SASLAuth.class);
         sd.getTheStream().addBlockListener(new PresenceDispatcher());
+        sd.getTheStream().addBlockListener(new MessageDispatcher());
         sd.getTheStream().addBlockListener(new RosterDispatcher());
         sd.getTheStream().addBlockListener(new EntityCaps());
         sd.getTheStream().addBlockListener(new IqVCard());
@@ -1300,6 +1307,10 @@ public class Roster
         //query bookmarks
         sd.getTheStream().addBlockListener(new BookmarkQuery(BookmarkQuery.LOAD));
 //#endif
+        if (sd.getTheStream().isManagementSupported()) {
+            sd.getTheStream().addBlockListener(new StreamManagement());
+            sd.getTheStream().send(StreamManagement.enable());
+        }
     }
     
     public void loadAccount(boolean launch, int accountIndex) {
@@ -1662,9 +1673,8 @@ public class Roster
 
     public void doReconnect() {
         setProgress(SR.MS_DISCONNECTED, 0);
-
         logoff(null);
-
+        
         try {
             sendPresence(lastOnlineStatus, null);
         } catch (Exception e2) {
@@ -1828,10 +1838,12 @@ public class Roster
     public void logoff(String mess) {
         if (isLoggedIn()) {
             try {
-                if (mess == null) {
-                    mess = sl.getStatus(Presence.PRESENCE_OFFLINE).getMessage();
+                if (!sd.getTheStream().isResumptionAllowed()) {
+                    if (mess == null) {
+                        mess = sl.getStatus(Presence.PRESENCE_OFFLINE).getMessage();
+                    }
+                    sendPresence(Presence.PRESENCE_OFFLINE, mess);
                 }
-                sendPresence(Presence.PRESENCE_OFFLINE, mess);
                 sd.getTheStream().loggedIn = false;
             } catch (Exception e) {
             }
